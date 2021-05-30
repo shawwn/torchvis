@@ -2,7 +2,7 @@ import numpy as np
 import numpy.fft as fft
 
 
-def stft(x, Nwin, Nfft=None):
+def stft(x, Nwin, Nfft=None, Ffft=np.fft.rfft):
     """
     Short-time Fourier transform: convert a 1D vector to a 2D array
 
@@ -36,7 +36,7 @@ def stft(x, Nwin, Nfft=None):
     # reshape into array `Nwin` wide, and as tall as possible. This is
     # optimized for C-order (row-major) layouts.
     arr = np.reshape(x[:Nwindows * Nwin], (-1, Nwin))
-    stft = fft.rfft(arr, Nfft)
+    stft = Ffft(arr, Nfft)
     return stft
 
 
@@ -76,7 +76,7 @@ def stftbins(x, Nwin, Nfft=None, d=1.0):
     return t, f
 
 
-def istft(stftArr, Nwin):
+def istft(stftArr, Nwin, Ffft=np.fft.irfft):
     """
     Inverse short-time Fourier transform (ISTFT)
 
@@ -99,7 +99,7 @@ def istft(stftArr, Nwin):
     See also:
     stft : the forward transform
     """
-    arr = fft.irfft(stftArr)[:, :Nwin]
+    arr = Ffft(stftArr)[:, :Nwin]
     return np.reshape(arr, -1)
 
 
