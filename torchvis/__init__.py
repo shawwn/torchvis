@@ -122,9 +122,12 @@ def to_numpy(x, concat_axis=-1) -> np.ndarray:
         return x.to_py()
     if is_numpy_tensor(x):
         return x
+    if hasattr(x, 'numpy'):
+        return x.numpy()
+    if hasattr(x, 'to_py'):
+        return x.to_py()
     x = flatlist(x)
-    x = [v.numpy() if hasattr(v, 'numpy') else v for v in x]
-    x = [v.to_py() if hasattr(v, 'to_py') else v for v in x]
+    x = [to_numpy(v) for v in x]
     # reshape to 2D.
     x = [v.reshape([-1, v.shape[-1]]) for v in x]
     x = np.concatenate(x, axis=concat_axis)
@@ -1151,6 +1154,7 @@ class Vis:
             lo = Mx.min()
         if hi is None:
             hi = Mx.max()
+        lo, hi = tt(lo), tt(hi)
         Rx_lo, Rx_hi = Rx.min(), Rx.max()
         Ix_lo, Ix_hi = Ix.min(), Ix.max()
         #x = (x - Mx.min()) / (Mx.max() - Mx.min())
