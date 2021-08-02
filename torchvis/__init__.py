@@ -1131,9 +1131,11 @@ def remap(x, lo=0.0, hi=1.0, minimum=None, maximum=None):
 from matplotlib import cm
 
 class Vis:
-    def __init__(self, value):
+    def __init__(self, value, lo=None, hi=None):
         self.value = tt(value).detach()
-    def to_string(self, *, join=True):
+        self.lo = lo
+        self.hi = hi
+    def to_string(self, *, join=True, lo=None, hi=None):
         x = to_kernel(self.value)
         if len(x.shape) <= 0:
             #return ''.join(angle(x))
@@ -1141,7 +1143,14 @@ class Vis:
         x = x.contiguous().view(-1, x.shape[-1])
         Mx = mag(x)
         Rx, Ix = real(x), imag(x)
-        lo, hi = Mx.min(), Mx.max()
+        if lo is None:
+            lo = self.lo
+        if hi is None:
+            hi = self.hi
+        if lo is None:
+            lo = Mx.min()
+        if hi is None:
+            hi = Mx.max()
         Rx_lo, Rx_hi = Rx.min(), Rx.max()
         Ix_lo, Ix_hi = Ix.min(), Ix.max()
         #x = (x - Mx.min()) / (Mx.max() - Mx.min())
@@ -1222,6 +1231,9 @@ class Vis:
         if len(self.value.shape) > 0:
             raise ValueError("Can't convert multiple angles to float")
         return float(self.value.angle())
+    @wraps(Vis.to_string)
+    def __call__(self, *args, **kws):
+        return self.to_string(*args, **kws)
 
 
 # A cosine wave of frequency f is sampled at times t = n * 1/Fs, where n is the
