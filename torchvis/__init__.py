@@ -151,7 +151,7 @@ def tt(x):
     if isinstance(x, PIL.Image.Image):
         return img2tensor(x)
     if not is_torch_tensor(x):
-        return torch.tensor(x)
+        return torch.tensor(to_numpy(x))
     else:
         return x
 
