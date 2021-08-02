@@ -1241,7 +1241,7 @@ class Vis:
         if len(self.value.shape) > 0:
             raise ValueError("Can't convert multiple angles to float")
         return float(self.value.angle())
-    @wraps(Vis.to_string)
+    @wraps(to_string)
     def __call__(self, *args, **kws):
         return self.to_string(*args, **kws)
 
