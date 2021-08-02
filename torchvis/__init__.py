@@ -135,7 +135,7 @@ def to_numpy(x, concat_axis=-1) -> np.ndarray:
     x = flatlist(x)
     x = [as_numpy(v) for v in x]
     # reshape to 2D.
-    x = [v.reshape([-1, v.shape[-1]]) for v in x]
+    x = [v.reshape([-1, v.shape[-1] if v.shape else 1]) for v in x]
     x = np.concatenate(x, axis=concat_axis)
     return x
 
