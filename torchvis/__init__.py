@@ -96,9 +96,10 @@ def listify(x):
 
 
 def flatten(x):
-    if listlike(x) and len(x) > 0:
-        x = functools.reduce(operator.add, [flatten(v) for v in x])
-    return vals(x)
+    return jax.tree_util.tree_leaves(x)
+    # if listlike(x) and len(x) > 0:
+    #     x = functools.reduce(operator.add, [flatten(v) for v in x])
+    # return vals(x)
 
 
 def flatlist(x):
@@ -115,7 +116,7 @@ def shapeof(x):
     return flatlist(x)
 
 
-def to_numpy(x, concat_axis=-1) -> np.ndarray:
+def as_numpy(x):
     if is_torch_tensor(x):
         return x.numpy()
     if is_jax_tensor(x):
@@ -126,8 +127,12 @@ def to_numpy(x, concat_axis=-1) -> np.ndarray:
         return x.numpy()
     if hasattr(x, 'to_py'):
         return x.to_py()
+    return np.array(x)
+
+
+def to_numpy(x, concat_axis=-1) -> np.ndarray:
     x = flatlist(x)
-    x = [to_numpy(v) for v in x]
+    x = [as_numpy(v) for v in x]
     # reshape to 2D.
     x = [v.reshape([-1, v.shape[-1]]) for v in x]
     x = np.concatenate(x, axis=concat_axis)
