@@ -1995,6 +1995,7 @@ def visual_repr(x):
 def patch_repr():
     PIL.Image.Image.__repr__ = visual_repr
     torch.Tensor.__repr__ = visual_repr
+    type(jnp.arange(3)).__bases__[0].__repr__ = visual_repr
 
 
 def hcat(*args, sep=''):
