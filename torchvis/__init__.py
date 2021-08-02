@@ -1137,7 +1137,7 @@ def remap(x, lo=0.0, hi=1.0, minimum=None, maximum=None):
     return lerp(minimum, maximum, t)
 
 
-from matplotlib import cm
+# from matplotlib import cm
 
 class Vis:
     def __init__(self, value, lo=None, hi=None):
