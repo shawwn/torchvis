@@ -4,6 +4,7 @@ from typing import Union
 
 import numpy as np
 import functools
+from functools import wraps
 import operator
 import math
 
@@ -38,6 +39,10 @@ def listlike(x):
     return isinstance(x, (list, tuple))
 
 
+def tensorlike(x):
+    return is_numpy_tensor(x) or is_torch_tensor(x)
+
+
 def stringlike(x):
     return isinstance(x, (bytes, str))
 
@@ -69,6 +74,8 @@ def keys(x):
 def vals(x):
     if dictlike(x):
         return list(x.values())
+    if tensorlike(x):
+        return [x]
     try:
         return list(x)
     except TypeError:
@@ -87,7 +94,7 @@ def listify(x):
 
 
 def flatten(x):
-    if listlike(x):
+    if listlike(x) and len(x) > 0:
         x = functools.reduce(operator.add, [flatten(v) for v in x])
     return vals(x)
 
@@ -132,6 +139,8 @@ def to_tensor(x, concat_axis=-1) -> torch.Tensor:
 
 
 def tt(x):
+    if isinstance(x, PIL.Image.Image):
+        return img2tensor(x)
     if not is_torch_tensor(x):
         return torch.tensor(x)
     else:
@@ -239,28 +248,32 @@ def ifft(x: Tensorlike, n=None, axis=-1) -> torch.Tensor:
     return torch.tensor(fftlib.ifft(to_numpy(x), n=n, axis=axis))
 
 
-def rfft(x: Tensorlike, *args) -> torch.Tensor:
-    return torch.tensor(fftlib.rfft(to_numpy(x), *args))
+def rfft(x: Tensorlike, *args, **kws) -> torch.Tensor:
+    return torch.tensor(fftlib.rfft(to_numpy(x), *args, **kws))
 
 
-def irfft(x: Tensorlike, *args) -> torch.Tensor:
-    return torch.tensor(fftlib.irfft(to_numpy(x), *args))
+def irfft(x: Tensorlike, *args, **kws) -> torch.Tensor:
+    return torch.tensor(fftlib.irfft(to_numpy(x), *args, **kws))
 
 
-def fft2(x: Tensorlike, *args) -> torch.Tensor:
-    return torch.tensor(fftlib.fft2(to_numpy(x), *args))
+@wraps(fftlib.fft2)
+def fft2(x: Tensorlike, n=None, axes=(-2, -1)) -> torch.Tensor:
+    n = pairify(n)
+    return torch.tensor(fftlib.fft2(to_numpy(x), s=n, axes=axes))
 
 
-def ifft2(x: Tensorlike, *args) -> torch.Tensor:
-    return torch.tensor(fftlib.ifft2(to_numpy(x), *args))
+@wraps(fftlib.ifft2)
+def ifft2(x: Tensorlike, n=None, axes=(-2, -1)) -> torch.Tensor:
+    n = pairify(n)
+    return torch.tensor(fftlib.ifft2(to_numpy(x), s=n, axes=axes))
 
 
-def rfft2(x: Tensorlike, *args) -> torch.Tensor:
-    return torch.tensor(fftlib.rfft2(to_numpy(x), *args))
+def rfft2(x: Tensorlike, *args, **kws) -> torch.Tensor:
+    return torch.tensor(fftlib.rfft2(to_numpy(x), *args, **kws))
 
 
-def irfft2(x: Tensorlike, *args) -> torch.Tensor:
-    return torch.tensor(fftlib.irfft2(to_numpy(x), *args))
+def irfft2(x: Tensorlike, *args, **kws) -> torch.Tensor:
+    return torch.tensor(fftlib.irfft2(to_numpy(x), *args, **kws))
 
 
 def rstft(x: Tensorlike, Nwin, Nfft=None) -> torch.Tensor:
@@ -616,7 +629,6 @@ def idct_2d(X, norm=None):
 
 try:
     import scipy.fft
-    from functools import wraps
 
     @wraps(scipy.fft.dctn)
     def dctn(x, type=2, s=None, axes=None, norm=None, overwrite_x=False):
@@ -633,13 +645,13 @@ try:
     import matplotlib.pyplot as plt
     import imgcat
 
-    def plot(*args, cat=True, figsize=None, dpi=300, linewidth=0.4, **kws):
+    def plot(*args, cat=True, figsize=None, dpi=300, linewidth=0.4, kind='plot', **kws):
         if figsize is None:
             # https://stackoverflow.com/questions/47633546/relationship-between-dpi-and-figure-size
             figsize = dpi / 72
             figsize = (2*figsize, figsize)
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-        ax.plot(*args, linewidth=linewidth, **kws)
+        getattr(ax, kind)(*args, linewidth=linewidth, **kws)
         if cat:
             imgcat.imgcat(fig)
         return fig, ax
@@ -667,12 +679,16 @@ def tensormap(fn, x: Tensorlike, *args, dim=-1, after=None, before=None, index=F
     return x
 
 
-def impulse(*size, dtype=torch.float32):
-    size = flatlist(size)
-    t = torch.tensor([1], dtype=dtype)
+def impulse(*size):
+    # size = flatlist(size)
+    # t = torch.tensor([1.0])
+    # t = t.reshape([1] * len(size))
+    # t = F.pad(t, flatlist([(p, p) for p in size]))
+    # return t
+    t = torch.tensor([1.0])
     t = t.reshape([1] * len(size))
-    t = F.pad(t, flatlist([(p, p) for p in size]))
-    return t
+    return widen(t, *size)
+
 
 
 # def to_kernel(x):
@@ -715,10 +731,12 @@ def prn(x, *args):
 
 
 def ndim(x):
-    return len(x.shape)
+    return len(shapeof(x))
 
 
 def pairify(x):
+    if x is None:
+        return x
     x = flatlist(x)
     if len(x) < 2:
         x *= 2
@@ -810,14 +828,24 @@ W_ = width
 
 def dim_index(x, dim):
     if dim < 0:
-        return ndim(x) - dim
+        return ndim(x) + dim
     else:
         return dim
 
 
-def unsqueeze(x, dim, count=1) -> torch.Tensor:
+def squeeze(x, dims, count=1) -> torch.Tensor:
     for i in range(count):
-        x = x.unsqueeze(dim)
+        for dim in flatlist(dims):
+            dim = dim_index(x, dim)
+            if 0 <= dim < ndim(x):
+                x = x.squeeze(dim)
+    return x
+
+
+def unsqueeze(x, dims, count=1) -> torch.Tensor:
+    for i in range(count):
+        for dim in flatlist(dims):
+            x = x.unsqueeze(dim)
     return x
 
 
@@ -829,7 +857,7 @@ def to_kernel(x) -> torch.Tensor:
     elif N == 2:
         return unsqueeze(x, 0, 2)
     elif N == 3:
-        return unsqueeze(x, 1)
+        return unsqueeze(x, 0, 1)
     elif N > 4:
         return x.view(-1, *x.shape[-3:])
     else:
@@ -845,7 +873,7 @@ def from_kernel(x, orig) -> torch.Tensor:
     elif N <= 3:
         return x.view(-1, x.shape[-2], x.shape[-1])
     else:
-        return x
+        return x.view(shapeof(orig))
 
 
 def is_complex(x):
@@ -866,19 +894,21 @@ def real(x):
         x = x.real
     return x.float()
 
+
 def imag(x):
     x = tt(x)
     if is_complex(x):
         x = x.imag
     else:
-        x = x * 0.0
-    return x.float(0)
+        x = torch.zeros_like(x)
+    return x.float()
 
 
 def mag(x):
-    if x.is_complex():
-        return x.abs().float()
-    return x
+    # if x.is_complex():
+    #     return x.abs().float()
+    # return tt(x).float()
+    return tt(x).abs().float()
 
 
 def conv(image, filter):
@@ -970,6 +1000,7 @@ angles = np.array([' '+c+k for c in '→↗↑↖←↙↓↘' for k in ['', '\u
 #angles = np.array([' '+c+k for c in '→↗↑↖←↙↓↘' for k in ['', '\u0307', '\u0308']])
 angles = np.array([' '+c for c in '→↗↑↖←↙↓↘'])
 empty = '  '
+#angles = np.array(list(''.join('🕒🕑🕐🕛🕚🕙🕘🕗🕖🕕🕔🕓')))
 
 def angle(x, empty=empty):
     if not is_complex(x):
@@ -1029,18 +1060,81 @@ def sinc(x):
     r[x == 0] = 1.0
     return r
 
+
+def clip(x, lo, hi):
+    x = tt(x)
+    return x.minimum(hi).maximum(lo)
+
+
+def allclose(*args, rtol=1e-5, atol=1e-8):
+    a, *more = flatlist(args)
+    while len(more) > 0:
+        b, *more = more
+        if not tt(a).allclose(tt(b), rtol=1e-5, atol=1e-8):
+            return False
+        a = b
+    return True
+
+
+def wherebetween(t, lo, hi, clipping=False):
+    t = tt(t)
+    if clipping:
+        t = clip(t, lo, hi)
+    return (t - lo) / (hi - lo)
+
+
+def lerp(lo, hi, t):
+    return (hi - lo) * t + lo
+
+
+def amin(img, axes=(-2, -1)):
+    x = to_kernel(img)
+    x = x.amin(axes, keepdim=True)
+    x = from_kernel(x, img)
+    return x
+    # x = squeeze(x, axes)
+    # return x.numpy()
+
+
+def amax(img, axes=(-2, -1)):
+    x = to_kernel(img)
+    x = x.amax(axes, keepdim=True)
+    x = from_kernel(x, img)
+    return x
+    # x = squeeze(x, axes)
+    # return x.numpy()
+
+
+def aminmax(img, axes=(-2, -1)):
+    return amin(img, axes=axes), amax(img, axes=axes)
+
+
+def remap(x, lo=0.0, hi=1.0, minimum=None, maximum=None):
+    t = wherebetween(x, lo, hi)
+    if minimum is None:
+        minimum = amin(x)
+    if maximum is None:
+        maximum = amax(x)
+    return lerp(minimum, maximum, t)
+
+
+from matplotlib import cm
+
 class Vis:
     def __init__(self, value):
-        self.value = tt(value)
+        self.value = tt(value).detach()
     def to_string(self, *, join=True):
         x = to_kernel(self.value)
         if len(x.shape) <= 0:
-            return ''.join(angle(x))
-        x = x.view(-1, x.shape[-1])
-        m = mag(x)
-        lo = m.min()
-        hi = m.max()
-        #x = (x - m.min()) / (m.max() - m.min())
+            #return ''.join(angle(x))
+            return str(x.numpy())
+        x = x.contiguous().view(-1, x.shape[-1])
+        Mx = mag(x)
+        Rx, Ix = real(x), imag(x)
+        lo, hi = Mx.min(), Mx.max()
+        Rx_lo, Rx_hi = Rx.min(), Rx.max()
+        Ix_lo, Ix_hi = Ix.min(), Ix.max()
+        #x = (x - Mx.min()) / (Mx.max() - Mx.min())
         lines = []
         for row in x:
             line = []
@@ -1053,6 +1147,10 @@ class Vis:
                     #v = float(to_numpy(v + 0.0001).log())
                     #c = colorize(c, None, v)
                     if c is empty:
+                        if True:
+                            #v = cm.coolwarm(v.numpy())[0:3]
+                            #v = cm.coolwarm(Rx.numpy() / Rx_hi)[0:3]
+                            v = v
                         c = colorize(c, None, v)
                     else:
                         v = v ** (1 / 2.2)
@@ -1064,11 +1162,42 @@ class Vis:
                         # u = (v*Vx, v*1.0, v*Vy)
                         # #u = (Vx, 1.0, Vy)
                         #c = colorize(c, v, None)
-                        c = colorize(c, 1.0 if v < 0.9 else 0.0, v)
+                        color = 1.0 if v < 0.75 else 0.0
+                        if False:
+                            R = max(-value.real, 0.0)
+                            B = max(-value.imag, 0.0)
+                        elif True:
+                            L = 0.25
+                            if value.real < 0 and value.imag < 0:
+                                color = (color, L, color)
+                            elif value.real < 0:
+                                color = (color, L, L)
+                            elif value.imag < 0:
+                                color = (L, L, color)
+                        c = colorize(c, color, v)
                 line.append(c)
             if join:
                 line = ''.join(line)
             lines.append(line)
+        w = 2*len(x[0])
+        def fmt(msg, *args, **kws):
+            lines.append(msg.format(*args, **kws).ljust(w))
+        if is_complex(x):
+            fmt('real[{:.6f} .. {:.6f}]', x.real.min().numpy(), x.real.max().numpy())
+            fmt('imag[{:.6f} .. {:.6f}]', x.imag.min().numpy(), x.imag.max().numpy())
+        else:
+            fmt('[{:.6f} .. {:.6f}]', x.min().numpy(), x.max().numpy())
+            fmt('')
+        # if is_complex(x):
+        #     lines.append('real.min={:.6f}'.format(x.real.min().numpy()).ljust(w))
+        #     lines.append('imag.min={:.6f}'.format(x.imag.min().numpy()).ljust(w))
+        #     lines.append('real.max={:.6f}'.format(x.real.max().numpy()).ljust(w))
+        #     lines.append('imag.max={:.6f}'.format(x.imag.max().numpy()).ljust(w))
+        # else:
+        #     lines.append('min={:.6f}'.format(x.min().numpy()).ljust(w))
+        #     lines.append('max={:.6f}'.format(x.max().numpy()).ljust(w))
+        #     lines.append(''.ljust(w))
+        #     lines.append(''.ljust(w))
         if join:
             lines = '\n'.join(lines)
             # if supportsColor.stdout:
@@ -1194,12 +1323,34 @@ def imgshift(img, dy, dx):
 
 def stretch(img, h=None, w=None):
     if h is None:
-        h = 2
+        h = 2.0
     if w is None:
-        w = 2
+        w = h
     img_h = height(img)
     img_w = width(img)
-    return sample(img, *grid(int(h * img_h), int(w * img_w), img_h, img_w))
+    if not isinstance(h, int):
+        h = int(h * img_h)
+    if not isinstance(w, int):
+        w = int(w * img_w)
+    return sample(img, *grid(h, w, img_h, img_w))
+
+
+def resize(img, h=None, w=None):
+    if h is None:
+        h = 1.0
+    if w is None:
+        w = h
+    img_h = height(img)
+    img_w = width(img)
+    if not isinstance(h, int):
+        h = int(h * img_h)
+    if not isinstance(w, int):
+        w = int(w * img_w)
+    result = idctn(padx(pady(dctn(img), -(img_h - h)), -(img_w - w)))
+    #result = remap(result, /permute)
+    return result
+    #x = to_kernel(img)
+
 
 
 
@@ -1798,6 +1949,35 @@ def tensor(x):
     return tt(x)
 
 
+def img2color(x):
+    if isinstance(x, PIL.Image.Image):
+        return tensor(np.array(x.convert('RGBA')) / 255.0)
+    return tensor(x)
+
+
+def img2tensor(x, mode=None, resize=None):
+    if isinstance(x, PIL.Image.Image):
+        img = x
+        if mode is not None:
+            img = img.convert(mode)
+        if resize is not None:
+            img = img.resize(resize)
+        img = tensor(np.array(img) / 255.0)
+        if ndim(img) > 2:
+            img = img.permute(-1, -3, -2).contiguous()
+        if channel_count(img) == 4:
+            alpha = img[-1]
+            if (alpha >= 1.0).all():
+                # drop alpha channel; it's white
+                img = img[0:3]
+        return img
+    return tensor(x)
+
+
+# def tensor2img(x):
+#     return img2tensor(x)
+
+
 def visual_repr(x):
     return repr(Vis(tensor(x)))
 
@@ -1861,8 +2041,18 @@ def repeat(n, f):
     return repeater
 
 
-def area(img):
-    return width(img) * height(img)
+def area(img, axes=(-2, -1), n=None):
+    if n is not None:
+        return np.prod(flatlist(n))
+    axes = flatlist(axes)
+    shape = shapeof(img)
+    x = 1
+    for axis in axes:
+        x *= shape[axis]
+    return x
+    # if axis is not None:
+    #     return shapeof(img)[axis]
+    # return width(img) * height(img)
 
 
 def dc(x):
@@ -1872,7 +2062,319 @@ def dc(x):
     return from_kernel(r, x)
 
 
+def dcval(x):
+    v = to_kernel(x)
+    r = v[:, :, 0:1, 0:1]
+    return from_kernel(r, x)
+
 def toprow(img):
     x = to_kernel(img)
     x = x[:, :, 0:1, :]
     return from_kernel(x, img)
+
+
+def blur(img, factor):
+    return ifft2(fft2(img) * fftshift(hamming(img) ** factor)).real
+
+
+def edges2(img, factor=7):
+    return blur(img, 1/(10**factor)) - img
+
+
+# x=np.array([1.,2.,3.])
+# y=fft(fft((1 + 1j)*x).imag)
+# >>> (y.real + y.imag).numpy() / np.prod(x.shape)
+# array([1., 2., 3.])
+
+# z=ifft(fft((1 + 1j)*x).real)
+# >>> (z.real + z.imag).numpy()
+# array([1., 2., 3.])
+
+
+def zfft2(x):
+    return fft2((1 + 1j)*x).real
+
+zf = zfft2
+
+
+def izfft2(x):
+    y = ifft2(x)
+    return y.real + y.imag
+
+
+@wraps(fftlib.fft)
+def dht(x, n=None, axis=-1):
+    return fft((1 + 1j) * tt(x), n=n, axis=axis).real
+
+
+@wraps(fftlib.ifft)
+def idht(x, n=None, axis=-1):
+    return dht(x / area(x, axes=axis, n=n), n=n, axis=axis)
+
+
+@wraps(fftlib.fft)
+def fst(x, n=None, axis=-1):
+    return dht(x, n=n, axis=axis) / (area(x, axes=axis, n=n) ** 0.5)
+
+
+ifst = fst
+
+
+@wraps(fft2)
+def dht2(x, n=None, axes=(-2, -1)):
+    n = pairify(n)
+    return fft2((1 + 1j) * tt(x), n=n, axes=axes).real
+
+
+@wraps(ifft2)
+def idht2(x, n=None, axes=(-2, -1)):
+    n = pairify(n)
+    return dht2(x / area(x, axes=axes, n=n), n=n, axes=axes)
+
+
+@wraps(fftlib.fft2)
+def fst2(x, n=None, axes=(-2, -1)):
+    n = pairify(n)
+    return dht2(x, n=n, axes=axes) / (area(x, axes=axes, n=n) ** 0.5)
+
+
+ifst2 = fst2
+
+
+def remap(x, lo=0.0, hi=1.0):
+    x0 = (x - x.min()) / (x.max() - x.min())
+    return x0 * (hi - lo) + lo
+
+
+def remap1(x, lo=-0.5, hi=0.5):
+    return remap(x, lo=lo, hi=hi)
+
+
+def remap2(x, lo=-1, hi=1):
+    return remap(x, lo=lo, hi=hi)
+
+
+def exposure(img, factor):
+    lo = img.min()
+    hi = img.max()
+    img0 = remap(img) ** factor
+    return remap(img0, lo, hi)
+
+def minmax(x):
+    x = tt(x)
+    return x.min().numpy(), x.max().numpy()
+
+
+def normalize(x, mean=None, var=None, gain=1.0, bias=0.0, eps=1e-5):
+    x = tt(x)
+    if mean is None:
+        mean = x.mean()
+    if var is None:
+        var = x.var()
+    return ((x - mean) / ((var + eps) ** 0.5)) * gain + bias
+
+
+def st2(x):
+    #return fst2(remap(normalize(x), x.min(), x.max()))
+    return fst2(normalize(x))
+
+
+def imcat(x):
+    x = img2tensor(x)
+    x = tt(x)
+    x = remap(x) * 255
+    x = x.byte()
+    x = x.numpy()
+    x = PIL.Image.fromarray(x, mode='L')
+    imgcat.imgcat(x)
+    x.save('foo.png')
+    #return x
+
+
+def fftzero(x, h, w=None):
+    if w is None:
+        w=h
+    return fftshift(widen(narrow(fftshift(x), h, w), h, w))
+
+
+# >>> beachxl_img = url2img('https://danbooru.donmai.us/data/original/dc/c4/__manjuu_unicorn_cheshire_and_cheshire_azur_lane_drawn_by_himitsu_hi_mi_tsu_2__dcc4a1294c81a7ec6750d65c5ef10700.png') ; beachxl = img2tensor(beachxl_img)
+# >>> imcat(ifft2((fftshift((hamming(beachxl) > 0.8).float()) * hamming(beachxl)**2.2 * fft2(beachxl))).real)
+
+
+# https://pvigier.github.io/2018/11/02/3d-perlin-noise-numpy.html
+def generate_perlin_noise_3d(shape, res):
+    def f(t):
+        return 6*t**5 - 15*t**4 + 10*t**3
+
+    delta = (res[0] / shape[0], res[1] / shape[1], res[2] / shape[2])
+    d = (shape[0] // res[0], shape[1] // res[1], shape[2] // res[2])
+    grid = np.mgrid[0:res[0]:delta[0],0:res[1]:delta[1],0:res[2]:delta[2]]
+    grid = grid.transpose(1, 2, 3, 0) % 1
+    # Gradients
+    theta = 2*np.pi*np.random.rand(res[0]+1, res[1]+1, res[2]+1)
+    phi = 2*np.pi*np.random.rand(res[0]+1, res[1]+1, res[2]+1)
+    gradients = np.stack((np.sin(phi)*np.cos(theta), np.sin(phi)*np.sin(theta), np.cos(phi)), axis=3)
+    gradients[-1] = gradients[0]
+    g000 = gradients[0:-1,0:-1,0:-1].repeat(d[0], 0).repeat(d[1], 1).repeat(d[2], 2)
+    g100 = gradients[1:  ,0:-1,0:-1].repeat(d[0], 0).repeat(d[1], 1).repeat(d[2], 2)
+    g010 = gradients[0:-1,1:  ,0:-1].repeat(d[0], 0).repeat(d[1], 1).repeat(d[2], 2)
+    g110 = gradients[1:  ,1:  ,0:-1].repeat(d[0], 0).repeat(d[1], 1).repeat(d[2], 2)
+    g001 = gradients[0:-1,0:-1,1:  ].repeat(d[0], 0).repeat(d[1], 1).repeat(d[2], 2)
+    g101 = gradients[1:  ,0:-1,1:  ].repeat(d[0], 0).repeat(d[1], 1).repeat(d[2], 2)
+    g011 = gradients[0:-1,1:  ,1:  ].repeat(d[0], 0).repeat(d[1], 1).repeat(d[2], 2)
+    g111 = gradients[1:  ,1:  ,1:  ].repeat(d[0], 0).repeat(d[1], 1).repeat(d[2], 2)
+    # Ramps
+    n000 = np.sum(np.stack((grid[:,:,:,0]  , grid[:,:,:,1]  , grid[:,:,:,2]  ), axis=3) * g000, 3)
+    n100 = np.sum(np.stack((grid[:,:,:,0]-1, grid[:,:,:,1]  , grid[:,:,:,2]  ), axis=3) * g100, 3)
+    n010 = np.sum(np.stack((grid[:,:,:,0]  , grid[:,:,:,1]-1, grid[:,:,:,2]  ), axis=3) * g010, 3)
+    n110 = np.sum(np.stack((grid[:,:,:,0]-1, grid[:,:,:,1]-1, grid[:,:,:,2]  ), axis=3) * g110, 3)
+    n001 = np.sum(np.stack((grid[:,:,:,0]  , grid[:,:,:,1]  , grid[:,:,:,2]-1), axis=3) * g001, 3)
+    n101 = np.sum(np.stack((grid[:,:,:,0]-1, grid[:,:,:,1]  , grid[:,:,:,2]-1), axis=3) * g101, 3)
+    n011 = np.sum(np.stack((grid[:,:,:,0]  , grid[:,:,:,1]-1, grid[:,:,:,2]-1), axis=3) * g011, 3)
+    n111 = np.sum(np.stack((grid[:,:,:,0]-1, grid[:,:,:,1]-1, grid[:,:,:,2]-1), axis=3) * g111, 3)
+    # Interpolation
+    t = f(grid)
+    n00 = n000*(1-t[:,:,:,0]) + t[:,:,:,0]*n100
+    n10 = n010*(1-t[:,:,:,0]) + t[:,:,:,0]*n110
+    n01 = n001*(1-t[:,:,:,0]) + t[:,:,:,0]*n101
+    n11 = n011*(1-t[:,:,:,0]) + t[:,:,:,0]*n111
+    n0 = (1-t[:,:,:,1])*n00 + t[:,:,:,1]*n10
+    n1 = (1-t[:,:,:,1])*n01 + t[:,:,:,1]*n11
+    return ((1-t[:,:,:,2])*n0 + t[:,:,:,2]*n1)
+
+
+def generate_fractal_noise_3d(shape, res, octaves=1, persistence=0.5):
+    noise = np.zeros(shape)
+    frequency = 1
+    amplitude = 1
+    for _ in range(octaves):
+        noise += amplitude * generate_perlin_noise_3d(shape, (frequency*res[0], frequency*res[1], frequency*res[2]))
+        frequency *= 2
+        amplitude *= persistence
+    return noise
+
+
+# https://github.com/pvigier/perlin-numpy
+
+
+
+def sampler(U, V=None, dy=0.0, dx=0.0):
+    if V is None:
+        V = torch.zeros_like(U)
+    Uw = width(U)
+    Uh = height(U)
+    Vw = width(V)
+    Vh = height(V)
+    Yi, Xi = grid(Vh, Vw, Uh, Uw, -0.5 + dy, -0.5 + dx)
+    for i in range(Vh):
+        for j in range(Vw):
+            p = 0.0
+            for n in range(Uh):
+                for m in range(Uw):
+                    Uc = U[..., n, m]
+                    Xsi = Xi[i, j] + 0.5
+                    Ysi = Yi[i, j] + 0.5
+                    if False:
+                        y = (Ysi - n)
+                        x = (Xsi - m)
+                        if x.floor().long() == 0 and y.floor().long() == 0:
+                            #print(f'n,m=({n},{m}) i,j=({i},{j}) x={x:+.2f} y={y:+.2f}')
+                            p += Uc
+                    elif False:
+                        if 5 <= n <= 5 and 5 <= m <= 5:
+                            p += (1 - (Ysi - n).abs()).maximum(tensor(0.0))
+                    elif True:
+                        v = (1 - (Ysi - n).abs()).maximum(tensor(0.0))
+                        u = (1 - (Xsi - m).abs()).maximum(tensor(0.0))
+                        p += Uc * u * v
+                    else:
+                        pass
+            V[..., i, j] += p
+
+    return V
+
+
+def aspect(x):
+    return height(x) / width(x)
+
+
+def show(img, lo_factor=1.0, hi_factor=1.0):
+    x = tt(img)
+    lo = -x.minimum(tensor(0))
+    hi = x.maximum(tensor(0))
+    lo = exposure(lo, lo_factor)
+    hi = exposure(hi, hi_factor)
+    imcat(hi - lo)
+    return hi - lo
+
+
+def hist(img, bins=100):
+    x = tt(img)
+    lo = x.min()
+    hi = x.max()
+    Y, _ = np.histogram(x.numpy(), bins=bins)
+    X = steps(lo, hi, bins)
+    plot(X, Y)
+
+
+
+# https://stackoverflow.com/questions/39510072/algorithm-for-adjustment-of-image-levels/48859502#48859502
+def levels(img, shadow=0, midtones=128, highlight=255, out_shadow=0, out_highlight=255):
+    Gamma = 1
+    MidtoneNormal = midtones / 255
+    if midtones < 128:
+        MidtoneNormal = MidtoneNormal * 2
+        Gamma = 1 + ( 9 * ( 1 - MidtoneNormal ) )
+        Gamma = min( Gamma, 9.99 )
+    elif midtones > 128:
+        MidtoneNormal = ( MidtoneNormal * 2 ) - 1
+        Gamma = 1 - MidtoneNormal
+        Gamma = max( Gamma, 0.01 )
+    GammaCorrection = 1 / Gamma
+    # Then, for each channel value R, G, B (0-255) for each pixel, do the following in order.
+    x = to_kernel(img).clone()
+    c = channel_count(x)
+    for i in range(c):
+        channel_value = x[:, i, :, :]
+        # Apply the input levels:
+        channel_value = 255 * ((channel_value - shadow) / (highlight - shadow))
+        # Apply the midtones:
+        if midtones != 128:
+            #channel_value = 255 * ( ( channel_value / 255 ) ** GammaCorrection )
+            channel_value = exposure(channel_value, GammaCorrection)
+        # Apply the output levels:
+        channel_value = ( channel_value / 255 ) * (out_highlight - out_shadow) + out_shadow
+        channel_value = channel_value.clip(out_shadow, out_highlight)
+        x[:, i, :, :] = channel_value
+    return from_kernel(x, img)
+
+
+def icat(x):
+    x = tt(x)
+    x = x.clip(0,254)
+    x = x.numpy()
+    imgcat.imgcat(x)
+
+
+# elf_img=url2img('https://danbooru.donmai.us/data/original/91/aa/__warcraft_and_1_more_drawn_by_alisa_nilsen__91aa489220fc72a5213fa6a2a3996877.jpg'); elf = img2tensor(elf_img)
+# imcat(levels(ifst2(ifftshift(fftshift(levels(remap(fst2(elf), -150/500, 1)*255, shadow=2.0, highlight=3.0, midtones=150, out_shadow=0, out_highlight=255)))), shadow=25, highlight=255, midtones=125))
+
+
+def padto(img, kernel, right=True):
+    kernel = tt(kernel)
+    img = tt(img)
+    Iw = width(img)
+    Ih = height(img)
+    Kw = width(kernel)
+    Kh = height(kernel)
+    Dlh = (Ih - Kh) // 2 + (((Ih - Kh) % 2) if not right else 0)
+    Dlw = (Iw - Kw) // 2 + (((Iw - Kw) % 2) if not right else 0)
+    Drh = (Ih - Kh) // 2 + (((Ih - Kh) % 2) if right else 0)
+    Drw = (Iw - Kw) // 2 + (((Iw - Kw) % 2) if right else 0)
+    x = to_kernel(kernel)
+    #return ([Dlh, Drh], [Dlw, Drw])
+    x = widen(x, [Dlh, Drh], [Dlw, Drw])
+    return from_kernel(x, kernel)
+
+
+# cat_img = url2img( 'https://i.imgur.com/lnJNjXH.png' ); cat = tt(cat_img.resize((48, 48)).convert('L'))
