@@ -13,6 +13,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 
 import jax.numpy as jnp
+import jax.tree_util
 
 from . import stftlib
 from . import selfish as G
