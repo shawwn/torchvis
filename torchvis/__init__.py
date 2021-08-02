@@ -12,12 +12,14 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 
+import jax.numpy as jnp
+
 from . import stftlib
 from . import selfish as G
 from .selflib import util as RT
 from numpy import fft as fftlib
 
-Tensorlike = Union[np.ndarray, torch.Tensor]
+Tensorlike = Union[np.ndarray, jnp.ndarray, torch.Tensor]
 
 
 # lol at this function.
@@ -40,7 +42,7 @@ def listlike(x):
 
 
 def tensorlike(x):
-    return is_numpy_tensor(x) or is_torch_tensor(x)
+    return is_numpy_tensor(x) or is_jax_tensor(x) or is_torch_tensor(x)
 
 
 def stringlike(x):
@@ -116,10 +118,13 @@ def shapeof(x):
 def to_numpy(x, concat_axis=-1) -> np.ndarray:
     if is_torch_tensor(x):
         return x.numpy()
+    if is_jax_tensor(x):
+        return x.to_py()
     if is_numpy_tensor(x):
         return x
     x = flatlist(x)
     x = [v.numpy() if hasattr(v, 'numpy') else v for v in x]
+    x = [v.to_py() if hasattr(v, 'to_py') else v for v in x]
     # reshape to 2D.
     x = [v.reshape([-1, v.shape[-1]]) for v in x]
     x = np.concatenate(x, axis=concat_axis)
@@ -134,6 +139,10 @@ def is_numpy_tensor(x):
     return isinstance(x, np.ndarray)
 
 
+def is_jax_tensor(x):
+    return isinstance(x, jnp.ndarray)
+
+
 def to_tensor(x, concat_axis=-1) -> torch.Tensor:
     return torch.tensor(to_numpy(x, concat_axis=concat_axis))
 
@@ -145,6 +154,7 @@ def tt(x):
         return torch.tensor(x)
     else:
         return x
+
 
 to_tensor = tt
 
