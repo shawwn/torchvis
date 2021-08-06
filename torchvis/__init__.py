@@ -46,6 +46,10 @@ def tensorlike(x):
     return is_numpy_tensor(x) or is_jax_tensor(x) or is_torch_tensor(x)
 
 
+def numpylike(x):
+    return is_numpy_tensor(x) or is_jax_tensor(x)
+
+
 def stringlike(x):
     return isinstance(x, (bytes, str))
 
@@ -131,6 +135,12 @@ def as_numpy(x):
     return np.array(x)
 
 
+def as_jaxpy(x) -> NumpyLike:
+    if not is_jax_tensor(x):
+        return jnp.array(to_numpy(x))
+    return x
+
+
 def to_numpy(x, concat_axis=-1) -> np.ndarray:
     x = flatlist(x)
     x = [as_numpy(v) for v in x]
@@ -149,6 +159,8 @@ def is_numpy_tensor(x):
 
 
 def is_jax_tensor(x):
+    if is_numpy_tensor(x):
+        return False
     return isinstance(x, jnp.ndarray)
 
 
