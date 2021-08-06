@@ -1,6 +1,7 @@
+from __future__ import annotations
 __version__ = '0.1.0'
 
-from typing import Union
+from typing import Union, Tuple
 
 import numpy as np
 import functools
@@ -20,7 +21,8 @@ from . import selfish as G
 from .selflib import util as RT
 from numpy import fft as fftlib
 
-Tensorlike = Union[np.ndarray, jnp.ndarray, torch.Tensor]
+TensorLike = Union[np.ndarray, jnp.ndarray, torch.Tensor]
+NumpyLike = Union[np.ndarray, jnp.ndarray]
 
 
 # lol at this function.
@@ -221,45 +223,45 @@ def shift(x, dim=-1, by=1):
     return roll(x, by, dim)
 
 
-def rollor(t: Tensorlike, shift=1, dim=0) -> torch.Tensor:
+def rollor(t: TensorLike, shift=1, dim=0) -> torch.Tensor:
     """Rolls every other slice along dim."""
     return torch.stack([x.roll(shift) if i % 2 == 0 else x for i, x in enumerate(t.unbind(dim))], dim=dim)
 
 
-def rnorm(x: Tensorlike) -> torch.Tensor:
+def rnorm(x: TensorLike) -> torch.Tensor:
     """Remap a real signal to [-1 .. 1]."""
     if x.is_complex():
         raise ValueError("rnorm: x.is_complex() should be False")
     v = x - (x.max() + x.min()) / 2
     return v / v.max()
 
-def rnorm0(x : Tensorlike) -> torch.Tensor:
+def rnorm0(x : TensorLike) -> torch.Tensor:
     """Remap a real signal to [0 .. 1]."""
     return rnorm(x) * 0.5 + 0.5
 
 
-def icircular(x: Tensorlike, *, radius=1.0) -> torch.Tensor:
+def icircular(x: TensorLike, *, radius=1.0) -> torch.Tensor:
     """Constrain complex numbers to a unit circle."""
     return torch.polar(torch.ones_like(x.abs()) * radius, x.angle())
 
 
-def inormabs(x: Tensorlike) -> torch.Tensor:
+def inormabs(x: TensorLike) -> torch.Tensor:
     """Return the magnitude scaled to [-1 .. 1]."""
     assert x.is_complex()
     return rnorm(x.abs())
 
 
-def inorm(x: Tensorlike) -> torch.Tensor:
+def inorm(x: TensorLike) -> torch.Tensor:
     """Return the real component scaled to [-1 .. 1]."""
     assert x.is_complex()
     return rnorm(x.real)
 
 
-def fftshift(x: Tensorlike, axes=None) -> torch.Tensor:
+def fftshift(x: TensorLike, axes=None) -> torch.Tensor:
     return torch.tensor(fftlib.fftshift(to_numpy(x), axes=axes))
 
 
-def ifftshift(x: Tensorlike, axes=None) -> torch.Tensor:
+def ifftshift(x: TensorLike, axes=None) -> torch.Tensor:
     return torch.tensor(fftlib.ifftshift(to_numpy(x), axes=axes))
 
 
@@ -271,58 +273,58 @@ def rfftfreq(n, d=1.0) -> torch.Tensor:
     return torch.tensor(fftlib.rfftfreq(n, d=d))
 
 
-def fft(x: Tensorlike, n=None, axis=-1) -> torch.Tensor:
+def fft(x: TensorLike, n=None, axis=-1) -> torch.Tensor:
     return torch.tensor(fftlib.fft(to_numpy(x), n=n, axis=axis))
 
 
-def ifft(x: Tensorlike, n=None, axis=-1) -> torch.Tensor:
+def ifft(x: TensorLike, n=None, axis=-1) -> torch.Tensor:
     return torch.tensor(fftlib.ifft(to_numpy(x), n=n, axis=axis))
 
 
-def rfft(x: Tensorlike, *args, **kws) -> torch.Tensor:
+def rfft(x: TensorLike, *args, **kws) -> torch.Tensor:
     return torch.tensor(fftlib.rfft(to_numpy(x), *args, **kws))
 
 
-def irfft(x: Tensorlike, *args, **kws) -> torch.Tensor:
+def irfft(x: TensorLike, *args, **kws) -> torch.Tensor:
     return torch.tensor(fftlib.irfft(to_numpy(x), *args, **kws))
 
 
 @wraps(fftlib.fft2)
-def fft2(x: Tensorlike, n=None, axes=(-2, -1)) -> torch.Tensor:
+def fft2(x: TensorLike, n=None, axes=(-2, -1)) -> torch.Tensor:
     n = pairify(n)
     return torch.tensor(fftlib.fft2(to_numpy(x), s=n, axes=axes))
 
 
 @wraps(fftlib.ifft2)
-def ifft2(x: Tensorlike, n=None, axes=(-2, -1)) -> torch.Tensor:
+def ifft2(x: TensorLike, n=None, axes=(-2, -1)) -> torch.Tensor:
     n = pairify(n)
     return torch.tensor(fftlib.ifft2(to_numpy(x), s=n, axes=axes))
 
 
-def rfft2(x: Tensorlike, *args, **kws) -> torch.Tensor:
+def rfft2(x: TensorLike, *args, **kws) -> torch.Tensor:
     return torch.tensor(fftlib.rfft2(to_numpy(x), *args, **kws))
 
 
-def irfft2(x: Tensorlike, *args, **kws) -> torch.Tensor:
+def irfft2(x: TensorLike, *args, **kws) -> torch.Tensor:
     return torch.tensor(fftlib.irfft2(to_numpy(x), *args, **kws))
 
 
-def rstft(x: Tensorlike, Nwin, Nfft=None) -> torch.Tensor:
+def rstft(x: TensorLike, Nwin, Nfft=None) -> torch.Tensor:
     return torch.tensor(stftlib.stft(to_numpy(x), Nwin, Nfft=Nfft, Ffft=np.fft.rfft))
 
 
-def irstft(x: Tensorlike, Nwin) -> torch.Tensor:
+def irstft(x: TensorLike, Nwin) -> torch.Tensor:
     return torch.tensor(stftlib.istft(to_numpy(x), Nwin, Ffft=np.fft.irfft))
 
 
-def stft(x: Tensorlike, Nwin, Nfft=None) -> torch.Tensor:
+def stft(x: TensorLike, Nwin, Nfft=None) -> torch.Tensor:
     return torch.tensor(stftlib.stft(to_numpy(x), Nwin, Nfft=Nfft, Ffft=np.fft.fft))
 
 
-def istft(x: Tensorlike, Nwin) -> torch.Tensor:
+def istft(x: TensorLike, Nwin) -> torch.Tensor:
     return torch.tensor(stftlib.istft(to_numpy(x), Nwin, Ffft=np.fft.ifft))
 
-def unwrap(x: Tensorlike, dim=None, jump=np.pi) -> torch.Tensor:
+def unwrap(x: TensorLike, dim=None, jump=np.pi) -> torch.Tensor:
     prev = None
     accum = 0
     def inner(v):
@@ -343,7 +345,7 @@ def unwrap(x: Tensorlike, dim=None, jump=np.pi) -> torch.Tensor:
         return r + accum
     return tensormap(inner, x, dim=dim)
 
-def unwrap_acc(x: Tensorlike, dim=None, jump=np.pi) -> torch.Tensor:
+def unwrap_acc(x: TensorLike, dim=None, jump=np.pi) -> torch.Tensor:
     prev = None
     accum = 0
     def inner(v):
@@ -690,7 +692,7 @@ except ImportError:
     pass
 
 
-def tensormap(fn, x: Tensorlike, *args, dim=-1, after=None, before=None, index=False) -> torch.Tensor:
+def tensormap(fn, x: TensorLike, *args, dim=-1, after=None, before=None, index=False) -> torch.Tensor:
     if dim is None:
         dim = np.arange(len(x.shape)).tolist()
     dims = flatlist(dim)
