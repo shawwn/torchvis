@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "torchvis"
-version = "0.2.3"
+version = "0.3.0"
 description = "Pytorch visualization experiments"
 authors = ["Shawn Presser"]
 license = "MIT"
